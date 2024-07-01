@@ -1,0 +1,112 @@
+---
+title: "Litterfall Quality and Nitrogen Cycling in Northern Temperate Forests"
+author: "Daniel Pinckney"
+date: '2023-07-24'
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(nlme)
+library(plotrix)
+library(cowplot)
+library(scales)
+dat <- read_excel("CCASE_LitterfallCNandEnviCondit.xlsx")
+dat$year <- as.integer(dat$year)
+dat$site <- as.integer(dat$site)
+dat3 <- dat %>% group_by(species, treatment, year, ref_avg_temp, ref_avg_vwc) %>%
+  summarize(mean_cn = mean(carb_nitr, na.rm = TRUE), 
+            se_cn = std.error(carb_nitr))
+american_beech <- dat %>% filter(species == "American Beech")
+red_maple <- dat %>% filter(species == "Red Maple")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+```{r Data Summary, dat, echo=FALSE}
+summary(dat)
+```
+
+## Carbon to Nitrogen Ratios amongst Treatments
+```{r C_Ntreat graphic, echo=FALSE}
+ggplot(dat, mapping = aes(treatment, carb_nitr, fill = treatment)) +
+  scale_fill_manual(values = c("black", "red3", "steelblue")) +
+  geom_boxplot() +
+  facet_wrap(~species) + 
+  theme_cowplot() + 
+  scale_x_discrete(guide = guide_axis(angle = 30)) +
+  labs(y = "C:N", x = "Treatment", fill = "Treatment", title = "Carbon to Nitrogen Ratios Between Treatments")
+
+```
+
+## Plotting Carbon to Nitrogen Over Time
+```{r avgC_Ntime graphic, echo=FALSE}
+ggplot(data = dat3, mapping = aes(x = year, y = mean_cn, color = treatment)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin = mean_cn - se_cn, ymax = mean_cn + se_cn, width= 0.3)) +
+  facet_wrap(~species) +
+  labs(title = "Carbon to Nitrogen Ratios over Time", x = "Year", color = "Treatment", y = "C:N") +
+  scale_color_manual(values = c("black", "red3", "steelblue")) +
+  theme_cowplot() +
+  scale_x_continuous(breaks = breaks_pretty())
+```
+
+```{r relative means, echo=FALSE}
+#Duplicate data to work with
+dat.comp <- dat3[c(1:3,6)]
+
+#Subset out reference data
+dat.ref <- dat.comp[dat.comp$treatment == "Reference",]
+
+#rename column in ref. data
+colnames(dat.ref)[4] <- "mean.ref"
+
+#Merge together all data with just reference
+dat.comp2 <- merge(dat.comp, dat.ref[c(1,3,4)], by = c("year", "species"))
+
+#Add new column for treatment litter relative to reference
+
+#e.g. (warming only - ref column) / ref column
+dat.comp3 <- dat.comp2 %>%  mutate(mean.rel = (mean_cn - mean.ref)/mean.ref)
+
+#Visualize
+ggplot(data = dat.comp3, aes(x = year, y = mean.rel, color = treatment)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  theme_cowplot() +
+  facet_wrap(~species) +
+  scale_color_manual(values = c("black", "red3", "steelblue")) +
+  labs(title = "Relative Carbon to Nitrogen Change", y = "Change Relative to Reference", x = "Year", color = "Treatment")
+```
+
+```{r linear mixed model species, echo=FALSE}
+lme_ab <- lme(carb_nitr~treatment, random=~1|site, data = american_beech, na.action=na.omit)
+lme_rm <- lme(carb_nitr~treatment, random=~1|site, data = red_maple, na.action=na.omit)
+summary(lme_ab)
+summary (lme_rm)
+```
+
+```{r anova species, echo=FALSE}
+anova(lme_ab)
+anova(lme_rm)
+```
+
+```{r C_Nmin statistic, echo=FALSE}
+summary(lm(avg_nmin_site ~ carb_nitr, dat))
+```
+
+```{r C_Nmin graphic, echo=FALSE}
+ggplot(dat, mapping = aes(carb_nitr, avg_nmin_site)) +
+  geom_point(mapping = aes(color = treatment)) +
+  scale_color_manual(values = c("black", "red3", "steelblue")) +
+  geom_smooth(method = "lm", color = "grey") +
+  theme_cowplot() +
+  labs(title = "Nitrogen Mineralization and Litterfall Quality", y = "Net N Min (µg N / g soil day)", x = "C:N", color = "Treatment")
+```
+
